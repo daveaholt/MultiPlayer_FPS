@@ -16,6 +16,21 @@ public class ClientSend : MonoBehaviour
         }
     }
 
+    public static void UDPTestReceived()
+    {
+        using(var p = new Packet((int)ClientPackets.udpTestReveived))
+        {
+            p.Write("Reveived a UDP packet.");
+            SendUDPData(p);
+        }
+    }
+
+    private static void SendUDPData(Packet p)
+    {
+        p.WriteLength();
+        Client.instance.udp.SendData(p);
+    }
+
     private static void SendTCPData(Packet p)
     {
         p.WriteLength();

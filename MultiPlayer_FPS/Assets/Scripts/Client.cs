@@ -14,6 +14,7 @@ public class Client : MonoBehaviour
     public int port = 3074;
     public int id = 0;
     public TCP tcp;
+    public UDP udp;
 
     private delegate void PacketHandler(Packet p);
     private static Dictionary<int, PacketHandler> packetHandlers;
@@ -41,7 +42,86 @@ public class Client : MonoBehaviour
     private void Start()
     {
         tcp = new TCP();
+        udp = new UDP();
     } 
+
+    public class UDP
+    {
+        public UdpClient socket;
+        public IPEndPoint endpoint;
+
+        public UDP()
+        {
+            endpoint = new IPEndPoint(IPAddress.Parse(instance.ip), instance.port);
+        }
+
+        public void Connect(int localPort)
+        {
+            socket = new UdpClient(localPort);
+            socket.Connect(endpoint);
+            socket.BeginReceive(ReceiveCallback, null);
+
+            using(Packet p = new Packet())
+            {
+                SendData(p);
+            }
+        } 
+
+        public void SendData(Packet p)
+        {
+            try
+            {
+                p.InsertInt(instance.id);
+                if(socket != null)
+                {
+                    socket.BeginSend(p.ToArray(), p.Length(), null, null);
+                }
+            }
+            catch(Exception ex)
+            {
+                Debug.Log($"Error sending data to server via UDP: {ex}");
+            }
+        }
+
+        private void ReceiveCallback(IAsyncResult result)
+        {
+            try
+            {
+                var data = socket.EndReceive(result, ref endpoint);
+                socket.BeginReceive(ReceiveCallback, null);
+
+                if(data.Length < 4)
+                {
+                    //TODO: disconnect (maybe?? partial packet?)
+                    return;
+                }
+
+                HandleData(data);
+            }
+            catch(Exception ex)
+            {
+                //TODO: disconnect 
+            }
+        }
+
+        private void HandleData(byte[] data)
+        {
+            using (Packet p = new Packet(data))
+            {
+                var packetLength = p.ReadInt();
+                data = p.ReadBytes(packetLength);
+            }
+
+            ThreadManager.ExecuteOnMainThread(()=>
+            {
+                using(Packet p = new Packet(data))
+                {
+                    var packetId = p.ReadInt();
+                    packetHandlers[packetId](p);
+                }
+            });
+        }
+    }
 
     public class TCP
     {
@@ -165,7 +245,8 @@ public class Client : MonoBehaviour
     {
         packetHandlers = new Dictionary<int, PacketHandler>()
         {
-            {(int)ServerPackets.welcome, ClientHandle.Welcome }
+            {(int)ServerPackets.welcome, ClientHandle.Welcome },
+            {(int)ServerPackets.udpTest, ClientHandle.UDPTest }
         };
         Debug.Log("Initialized packets");
     }
